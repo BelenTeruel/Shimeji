@@ -1,7 +1,7 @@
 import tkinter as tk
-import random, os, multiprocessing
-from PIL import Image, ImageTk
+import random, os,sys, multiprocessing, signal
 from utils import get_pet_paths, load_img_from, parse_args
+from tkinter import Menu
 
 class Mypet: 
     
@@ -9,7 +9,7 @@ class Mypet:
         self.root = tk.Tk()
         self.root.overrideredirect(True)
         self.root.wm_attributes("-topmost", True)
-        
+        self.root.protocol("WM_DELETE_WINDOW", self.clean_exit)
         self.screen_width = self.root.winfo_screenwidth()
         self.screen_height = self.root.winfo_screenheight()
 
@@ -33,6 +33,7 @@ class Mypet:
         self.label.bind("<ButtonPress-1>", self.on_drag_start)
         self.label.bind("<B1-Motion>", self.on_drag_motion)
         self.label.bind("<ButtonRelease-1>", self.on_drag_end)
+        self.label.bind("<Button-3>", self.show_context_menu)
         self.dragging = False
 
         self.directions = ["right", "up", "left", "down", "up_l", "down_l", "up_r", "down_r"]
@@ -53,7 +54,7 @@ class Mypet:
             self.direction = random.choice(self.directions)
             self.random_move()    
         
-        self.root.mainloop()
+        pass
 
     # @property
     # def x_bounds(self): ...
@@ -171,19 +172,57 @@ class Mypet:
     def on_drag_end(self, event):
         self.dragging = False
 
+    def show_context_menu(self, event):
+        menu = Menu(self.root, tearoff=0)
+        menu.add_command(label="Kill ☠️", command=self.clean_exit)
+        menu.tk_popup(event.x_root, event.y_root)
+
+    def clean_exit(self, signum=None, frame=None):
+        self.root.quit()
+        self.root.destroy()
+        print("\nKilling pet.. ☠️ ☠️ ☠️")
+
+    def _setup_signal_handlers(self):
+        def handler(sinum, frame):
+            self.root.quit(0, self.clean_exit)
+        signal.signal(signal.SIGINT, handler)
+        signal.signal(signal.SIGTERM, handler)
+
 
 paths = get_pet_paths()
 
 def run_pet(args):
-    Mypet(args)
+    pet = Mypet(args)
+    pet.root.mainloop()
 
-if __name__ == "__main__":
-    args = parse_args(list(paths.keys()))
-
-    processes = []  
+def create_processes(args, process_list):
     for _ in range(args.quantity):
         p = multiprocessing.Process(target=run_pet, args=(args,))
         p.start()
-        processes.append(p)
-    for p in processes:
-        p.join
+        process_list.append(p)
+    return process_list
+
+def destroy_processes(process_list):
+    for p in process_list:
+        if p.is_alive():
+            p.terminate()
+            p.join()
+    print("\nCongrats! You've kill all your pets.")
+
+if __name__ == "__main__":
+    args = parse_args(list(paths.keys()))
+    processes = []
+    try:
+        processes = create_processes(args, processes)
+        while any(p.is_alive() for p in processes):
+            for p in processes:
+                p.join(timeout=0.1)
+    except KeyboardInterrupt:
+        print("\nKilling pet.. ☠️ ☠️ ☠️")
+    except Exception as e:
+        print(f"Error: {e}")
+        
+    finally: 
+        destroy_processes(processes)
+        sys.exit(0)
+        
